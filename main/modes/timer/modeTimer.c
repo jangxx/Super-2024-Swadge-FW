@@ -73,9 +73,9 @@ typedef struct
 // Function Prototypes
 //==============================================================================
 
-static void timerEnterMode(void);
-static void timerExitMode(void);
-static void timerMainLoop(int64_t elapsedUs);
+static void cheersTimerEnterMode(void);
+static void cheersTimerExitMode(void);
+static void cheersTimerMainLoop(int64_t elapsedUs);
 static void incTime(void);
 static void decTime(void);
 
@@ -102,9 +102,9 @@ swadgeMode_t timerMode = {
     .usesAccelerometer        = true,
     .usesThermometer          = false,
     .overrideSelectBtn        = false,
-    .fnEnterMode              = timerEnterMode,
-    .fnExitMode               = timerExitMode,
-    .fnMainLoop               = timerMainLoop,
+    .fnEnterMode              = cheersTimerEnterMode,
+    .fnExitMode               = cheersTimerExitMode,
+    .fnMainLoop               = cheersTimerMainLoop,
     .fnAudioCallback          = NULL,
     .fnBackgroundDrawCallback = NULL,
     .fnEspNowRecvCb           = NULL,
@@ -118,7 +118,7 @@ static timerMode_t* timerData = NULL;
 // Functions
 //==============================================================================
 
-static void timerEnterMode(void)
+static void cheersTimerEnterMode(void)
 {
     timerData = calloc(1, sizeof(timerMode_t));
 
@@ -136,7 +136,7 @@ static void timerEnterMode(void)
     timerData->timerState    = STOPPED;
 }
 
-static void timerExitMode(void)
+static void cheersTimerExitMode(void)
 {
     freeFont(&timerData->textFont);
     freeFont(&timerData->numberFont);
@@ -149,7 +149,7 @@ static void timerExitMode(void)
     timerData = NULL;
 }
 
-static void timerMainLoop(int64_t elapsedUs)
+static void cheersTimerMainLoop(int64_t elapsedUs)
 {
     int64_t now = esp_timer_get_time();
     if (timerData->timerState == RUNNING

@@ -26,6 +26,7 @@
 #include "touchTest.h"
 #include "tunernome.h"
 #include "mode_credits.h"
+#include "cheersTimer.h"
 
 #include "settingsManager.h"
 
@@ -170,6 +171,7 @@ static void mainMenuEnterMode(void)
     addSingleItemToMenu(mainMenu->menu, modePaint.modeName);
     addSingleItemToMenu(mainMenu->menu, gamepadMode.modeName);
     addSingleItemToMenu(mainMenu->menu, timerMode.modeName);
+    addSingleItemToMenu(mainMenu->menu, cheersTimerMode.modeName);
     mainMenu->menu = endSubMenu(mainMenu->menu);
 
     addSingleItemToMenu(mainMenu->menu, modeCredits.modeName);
@@ -409,6 +411,10 @@ static void mainMenuCb(const char* label, bool selected, uint32_t settingVal)
         else if (label == modeCredits.modeName)
         {
             switchToSwadgeMode(&modeCredits);
+        }
+        else if (label == cheersTimerMode.modeName)
+        {
+            switchToSwadgeMode(&cheersTimerMode);
         }
     }
     else

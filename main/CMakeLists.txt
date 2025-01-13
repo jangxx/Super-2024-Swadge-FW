@@ -107,6 +107,7 @@ idf_component_register(SRCS "swadge2024.c"
                             "utils/trigonometry.c"
                             "utils/vector2d.c"
                             "utils/wheel_menu.c"
+                            "modes/cheersTimer/cheersTimer.c"
                     PRIV_REQUIRES hdw-imu
                                   hdw-battmon
                                   hdw-btn
@@ -152,7 +153,8 @@ idf_component_register(SRCS "swadge2024.c"
                                 "./modes/touchTest"
                                 "./modes/tunernome"
                                 "./modes/demo"
-                                "./modes/quickSettings")
+                                "./modes/quickSettings"
+                                "./modes/cheersTimer")
 
 function(spiffs_file_preprocessor)
     add_custom_target(spiffs_preprocessor ALL
