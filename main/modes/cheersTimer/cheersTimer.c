@@ -15,24 +15,13 @@
 #include "wsg.h"
 
 //==============================================================================
-// Defines
-//==============================================================================
-
-#define PAUSE_FLASH_SPEED  1000000
-#define PAUSE_FLASH_SHOW   600000
-#define EXPIRE_FLASH_SPEED 500000
-#define EXPIRE_FLASH_SHOW  250000
-#define REPEAT_DELAY       500000
-#define REPEAT_TIME        150000
-
-//==============================================================================
 // Enums
 //==============================================================================
 
 typedef enum
 {
-    STOPPED = 0,
-    RUNNING,
+	STOPPED = 0,
+	RUNNING,
 } timerState_t;
 
 //==============================================================================
@@ -41,22 +30,18 @@ typedef enum
 
 typedef struct
 {
-    font_t textFont;
-    font_t numberFont;
-    wsg_t dpadWsg;
-    wsg_t aWsg;
-    wsg_t bWsg;
-    song_t coinFX;
+	font_t textFont;
+	font_t numberFont;
+	wsg_t dpadWsg;
+	wsg_t aWsg;
+	wsg_t bWsg;
+	song_t coinFX;
 
-    /// @brief Current timer state
-    timerState_t timerState;
+	/// @brief Current timer state
+	timerState_t timerState;
 
-    /// @brief The actual time the timer was started
-    int64_t startTime;
-
-    // bool holdingArrow;
-    // buttonBit_t heldArrow;
-    // int64_t repeatTimer;
+	/// @brief The actual time the timer was started
+	int64_t startTime;
 } timerMode_t;
 
 //==============================================================================
@@ -67,6 +52,9 @@ static void cheersTimerEnterMode(void);
 static void cheersTimerExitMode(void);
 static void cheersTimerMainLoop(int64_t elapsedUs);
 static void setLedsCheers();
+static void cheersTimerEspNowRecvCb(const esp_now_recv_info_t *esp_now_info, const uint8_t* data, uint8_t len, int8_t rssi);
+static void cheersTimerEspNowSendCb(const uint8_t* mac_addr, esp_now_send_status_t status);
+static void cheersTimerSetState(int64_t now, timerState_t state);
 
 //==============================================================================
 // Strings
@@ -80,25 +68,28 @@ static const char startStr[] = "Start";
 static const char cheersStr[] = "Cheers";
 static const char titleStr[] = "Time since last Cheers";
 
+static const char cheersPacket[] = "CHEERS";
+static const char resetPacket[]  = "SREEHC";
+
 //==============================================================================
 // Variables
 //==============================================================================
 
 swadgeMode_t cheersTimerMode = {
-    .modeName                 = timerName,
-    .wifiMode                 = NO_WIFI,
-    .overrideUsb              = false,
-    .usesAccelerometer        = true,
-    .usesThermometer          = false,
-    .overrideSelectBtn        = false,
-    .fnEnterMode              = cheersTimerEnterMode,
-    .fnExitMode               = cheersTimerExitMode,
-    .fnMainLoop               = cheersTimerMainLoop,
-    .fnAudioCallback          = NULL,
-    .fnBackgroundDrawCallback = NULL,
-    .fnEspNowRecvCb           = NULL,
-    .fnEspNowSendCb           = NULL,
-    .fnAdvancedUSB            = NULL,
+	.modeName                 = timerName,
+	.wifiMode                 = ESP_NOW,
+	.overrideUsb              = false,
+	.usesAccelerometer        = false,
+	.usesThermometer          = false,
+	.overrideSelectBtn        = false,
+	.fnEnterMode              = cheersTimerEnterMode,
+	.fnExitMode               = cheersTimerExitMode,
+	.fnMainLoop               = cheersTimerMainLoop,
+	.fnAudioCallback          = NULL,
+	.fnBackgroundDrawCallback = NULL,
+	.fnEspNowRecvCb           = cheersTimerEspNowRecvCb,
+	.fnEspNowSendCb           = cheersTimerEspNowSendCb,
+	.fnAdvancedUSB            = NULL,
 };
 
 static timerMode_t* timerData = NULL;
@@ -109,143 +100,200 @@ static timerMode_t* timerData = NULL;
 
 static void cheersTimerEnterMode(void)
 {
-    timerData = calloc(1, sizeof(timerMode_t));
+	timerData = calloc(1, sizeof(timerMode_t));
 
-    loadFont("ibm_vga8.font", &timerData->textFont, false);
-    loadFont("seven_segment.font", &timerData->numberFont, false);
-    loadWsg("button_up.wsg", &timerData->dpadWsg, false);
-    loadWsg("button_a.wsg", &timerData->aWsg, false);
-    loadWsg("button_b.wsg", &timerData->bWsg, false);
-    loadSong("coin.sng", &timerData->coinFX, false);
+	loadFont("ibm_vga8.font", &timerData->textFont, false);
+	loadFont("seven_segment.font", &timerData->numberFont, false);
+	loadWsg("button_up.wsg", &timerData->dpadWsg, false);
+	loadWsg("button_a.wsg", &timerData->aWsg, false);
+	loadWsg("button_b.wsg", &timerData->bWsg, false);
+	loadSong("coin.sng", &timerData->coinFX, false);
 
-    // 100FPS? Sure?
-    setFrameRateUs(1000000 / 100);
+	// 30 FPS
+	setFrameRateUs(1000000 / 30);
 
-    timerData->timerState = STOPPED;
+	timerData->timerState = STOPPED;
 
-    setLedsCheers();
+	setLedsCheers();
 }
 
 static void cheersTimerExitMode(void)
 {
-    freeFont(&timerData->textFont);
-    freeFont(&timerData->numberFont);
+	freeFont(&timerData->textFont);
+	freeFont(&timerData->numberFont);
 
-    freeWsg(&timerData->dpadWsg);
-    freeWsg(&timerData->aWsg);
-    freeWsg(&timerData->bWsg);
+	freeWsg(&timerData->dpadWsg);
+	freeWsg(&timerData->aWsg);
+	freeWsg(&timerData->bWsg);
 
-    freeSong(&timerData->coinFX);
+	freeSong(&timerData->coinFX);
 
-    free(timerData);
-    timerData = NULL;
+	free(timerData);
+	timerData = NULL;
 }
+
+static void cheersTimerEspNowRecvCb(const esp_now_recv_info_t *esp_now_info, const uint8_t* data, uint8_t len, int8_t rssi)
+{
+	int64_t now = esp_timer_get_time();
+
+	// Both start and stop packets are 7 bytes long. (6 chars + null terminator)
+	if (len == 7)
+	{
+		uint8_t buffer[len];
+		memcpy(buffer, data, len);
+		buffer[len - 1] = '\0'; // Ensure null termination
+
+		if (strcmp((char*)buffer, cheersPacket) == 0) {
+			cheersTimerSetState(now, STOPPED);
+		} else if (strcmp((char*)buffer, resetPacket) == 0) {
+			cheersTimerSetState(now, RUNNING);
+		}
+	}
+}
+
+static void cheersTimerEspNowSendCb(const uint8_t* mac_addr, esp_now_send_status_t status)
+{
+    // static led_t leds[CONFIG_NUM_LEDS] = {{0}};
+
+	// for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+	// 	leds[i].r = (status == ESP_NOW_SEND_FAIL) ? 255 : 0;
+	// 	leds[i].g = (status == ESP_NOW_SEND_SUCCESS) ? 255 : 0;
+	// 	leds[i].b = 0;
+	// }
+
+	// setLeds(leds, CONFIG_NUM_LEDS);
+
+	// Do nothing
+}
+
+
+static void cheersTimerSetState(int64_t now, timerState_t state)
+{
+	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
+
+	timerData->timerState = state;
+
+	switch (state)
+	{
+		case RUNNING:
+		{
+			timerData->startTime = now;
+
+			for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+				leds[i].r = 255;
+				leds[i].g = 0;
+				leds[i].b = 0;
+			}
+
+			setLeds(leds, CONFIG_NUM_LEDS);
+			break;
+		}
+		case STOPPED:
+		{	
+			setLedsCheers();
+			bzrPlaySfx(&timerData->coinFX, BZR_STEREO);
+			break;
+		}
+	}
+}
+
 
 static void cheersTimerMainLoop(int64_t elapsedUs)
 {
-    static led_t leds[CONFIG_NUM_LEDS] = {{0}};
+	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
 
-    int64_t now = esp_timer_get_time();
+	int64_t now = esp_timer_get_time();
 
-    buttonEvt_t evt;
-    while (checkButtonQueueWrapper(&evt))
-    {
-        if (evt.down)
-        {
-            if (evt.button == PB_A || evt.button == PB_B)
-            {
-                switch (timerData->timerState)
-                {
-                    case STOPPED:
-                    {
-                        timerData->startTime = now;
-                        timerData->timerState = RUNNING;
+	buttonEvt_t evt;
+	while (checkButtonQueueWrapper(&evt))
+	{
+		if (evt.down)
+		{
+			if (evt.button == PB_A || evt.button == PB_B)
+			{
+				switch (timerData->timerState)
+				{
+					case STOPPED:
+					{
+						espNowSend(resetPacket, ARRAY_SIZE(resetPacket));
+						cheersTimerSetState(now, RUNNING);
+						break;
+					}
 
-                        for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
-                            leds[i].r = 255;
-                            leds[i].g = 0;
-                            leds[i].b = 0;
-                        }
+					case RUNNING:
+					{
+						espNowSend(cheersPacket, ARRAY_SIZE(cheersPacket));
+						cheersTimerSetState(now, STOPPED);
+						break;
+					}
+				}
+			}
+		}
+	}
 
-                        setLeds(leds, CONFIG_NUM_LEDS);
-                        break;
-                    }
+	clearPxTft();
 
-                    case RUNNING:
-                    {
-                        timerData->timerState = STOPPED;
-                        setLedsCheers();
-                        bzrPlaySfx(&timerData->coinFX, BZR_STEREO);
-                        break;
-                    }
-                }
-            }
-        }
-    }
+	int16_t wsgOffset = (timerData->aWsg.h - timerData->textFont.height) / 2;
 
-    clearPxTft();
+	uint16_t titleWidth = textWidth(&timerData->textFont, titleStr);
+	uint16_t controlsOffset = TFT_HEIGHT - 30;
 
-    int16_t wsgOffset = (timerData->aWsg.h - timerData->textFont.height) / 2;
+	drawText(&timerData->textFont, c555, titleStr, TFT_WIDTH/2 - titleWidth/2, 5);
 
-    uint16_t titleWidth = textWidth(&timerData->textFont, titleStr);
-    uint16_t controlsOffset = TFT_HEIGHT - 30;
+	drawWsgSimple(&timerData->aWsg, 20, controlsOffset);
+	drawWsgSimple(&timerData->bWsg, 35, controlsOffset);
 
-    drawText(&timerData->textFont, c555, titleStr, TFT_WIDTH/2 - titleWidth/2, 5);
+	if (timerData->timerState == STOPPED) {
+		drawText(&timerData->textFont, c444, startStr, 55, controlsOffset + wsgOffset);
+	} else {
+		drawText(&timerData->textFont, c444, cheersStr, 55, controlsOffset + wsgOffset);
+	}
 
-    drawWsgSimple(&timerData->aWsg, 20, controlsOffset);
-    drawWsgSimple(&timerData->bWsg, 35, controlsOffset);
+	int64_t elapsed = now - timerData->startTime;
 
-    if (timerData->timerState == STOPPED) {
-        drawText(&timerData->textFont, c444, startStr, 55, controlsOffset + wsgOffset);
-    } else {
-        drawText(&timerData->textFont, c444, cheersStr, 55, controlsOffset + wsgOffset);
-    }
+	uint16_t elapsedMillis = (elapsed / 1000) % 1000;
+	uint8_t elapsedSecs    = (elapsed / 1000000) % 60;
+	uint8_t elapsedMins    = (elapsed / (60 * 1000000)) % 60;
+	uint64_t elapsedHrs = elapsed / 3600000000;
 
-    int64_t elapsed = now - timerData->startTime;
+	char buffer[64];
+	if (elapsedHrs > 0)
+	{
+		snprintf(buffer, sizeof(buffer), hoursMinutesSecondsFmt, elapsedHrs, elapsedMins, elapsedSecs, elapsedMillis);
+	}
+	else
+	{
+		snprintf(buffer, sizeof(buffer), minutesSecondsFmt, elapsedMins, elapsedSecs, elapsedMillis);
+	}
 
-    uint16_t elapsedMillis = (elapsed / 1000) % 1000;
-    uint8_t elapsedSecs    = (elapsed / 1000000) % 60;
-    uint8_t elapsedMins    = (elapsed / (60 * 1000000)) % 60;
-    uint64_t elapsedHrs = elapsed / 3600000000;
+	uint16_t textX;
+	uint16_t textY = (TFT_HEIGHT - timerData->numberFont.height) / 2;
 
-    char buffer[64];
-    if (elapsedHrs > 0)
-    {
-        snprintf(buffer, sizeof(buffer), hoursMinutesSecondsFmt, elapsedHrs, elapsedMins, elapsedSecs, elapsedMillis);
-    }
-    else
-    {
-        snprintf(buffer, sizeof(buffer), minutesSecondsFmt, elapsedMins, elapsedSecs, elapsedMillis);
-    }
+	if (timerData->timerState == RUNNING) {
+		textX = (TFT_WIDTH - textWidth(&timerData->numberFont, buffer)) / 2;
+		textX = drawText(&timerData->numberFont, c050, buffer, textX, textY);
 
-    uint16_t textX;
-    uint16_t textY = (TFT_HEIGHT - timerData->numberFont.height) / 2;
+		for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+			leds[i].r = (elapsedSecs % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+			leds[i].g = ((elapsedSecs+1) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+			leds[i].b = ((elapsedSecs+2) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+		}
 
-    if (timerData->timerState == RUNNING) {
-        textX = (TFT_WIDTH - textWidth(&timerData->numberFont, buffer)) / 2;
-        textX = drawText(&timerData->numberFont, c050, buffer, textX, textY);
-
-        for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
-            leds[i].r = (elapsedSecs % 3 == 0) ? 255 - elapsedMillis/4 : 0;
-            leds[i].g = ((elapsedSecs+1) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
-            leds[i].b = ((elapsedSecs+2) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
-        }
-
-        setLeds(leds, CONFIG_NUM_LEDS);
-    } else {
-        textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
-        textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
-    }
+		setLeds(leds, CONFIG_NUM_LEDS);
+	} else {
+		textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
+		textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
+	}
 }
 
 static void setLedsCheers() {
-    static led_t leds[CONFIG_NUM_LEDS] = {{0}};
+	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
 
-    for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
-        leds[i].r = 255;
-        leds[i].g = 255;
-        leds[i].b = 0;
-    }
+	for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+		leds[i].r = 255;
+		leds[i].g = 255;
+		leds[i].b = 0;
+	}
 
-    setLeds(leds, CONFIG_NUM_LEDS);
+	setLeds(leds, CONFIG_NUM_LEDS);
 }
