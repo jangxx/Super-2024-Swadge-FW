@@ -217,7 +217,7 @@ void app_main(void)
     readAllSettings();
 
     // If test mode was passed
-    if (true || getTestModePassedSetting())
+    if (getTestModePassedSetting())
     {
         // Show the main menu
         cSwadgeMode = &mainMenuMode;
