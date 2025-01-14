@@ -21,8 +21,16 @@
 typedef enum
 {
 	STOPPED = 0,
+	INITIAL,
 	RUNNING,
 } timerState_t;
+
+typedef enum
+{
+	LED_MODE_FULL = 0,
+	LED_MODE_SINGLE,
+	LED_MODE_MAX
+} ledMode_t;
 
 //==============================================================================
 // Structs
@@ -42,6 +50,8 @@ typedef struct
 
 	/// @brief The actual time the timer was started
 	int64_t startTime;
+
+	ledMode_t ledMode;
 } timerMode_t;
 
 //==============================================================================
@@ -52,9 +62,13 @@ static void cheersTimerEnterMode(void);
 static void cheersTimerExitMode(void);
 static void cheersTimerMainLoop(int64_t elapsedUs);
 static void setLedsCheers();
+static void setLedsOff();
 static void cheersTimerEspNowRecvCb(const esp_now_recv_info_t *esp_now_info, const uint8_t* data, uint8_t len, int8_t rssi);
 static void cheersTimerEspNowSendCb(const uint8_t* mac_addr, esp_now_send_status_t status);
 static void cheersTimerSetState(int64_t now, timerState_t state);
+
+static void ledModeFull(uint8_t elapsedSecs, uint16_t elapsedMillis);
+static void ledModeSingle(uint8_t elapsedSecs, uint16_t elapsedMillis);
 
 //==============================================================================
 // Strings
@@ -67,9 +81,12 @@ static const char hoursMinutesSecondsFmt[] = "%" PRIu64 ":%02" PRIu8 ":%02" PRIu
 static const char startStr[] = "Start";
 static const char cheersStr[] = "Cheers";
 static const char titleStr[] = "Time since last Cheers";
+static const char ledModeStr[] = "LED Mode";
 
 static const char cheersPacket[] = "CHEERS";
 static const char resetPacket[]  = "SREEHC";
+
+static led_t cheersLeds[CONFIG_NUM_LEDS] = {{0}};
 
 //==============================================================================
 // Variables
@@ -112,7 +129,15 @@ static void cheersTimerEnterMode(void)
 	// 30 FPS
 	setFrameRateUs(1000000 / 30);
 
-	timerData->timerState = STOPPED;
+	timerData->timerState = INITIAL;
+	timerData->ledMode = LED_MODE_FULL;
+
+	// theoretically we would only have to do this once ever
+	for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+		cheersLeds[i].r = 255;
+		cheersLeds[i].g = 255;
+		cheersLeds[i].b = 0;
+	}
 
 	setLedsCheers();
 }
@@ -190,18 +215,27 @@ static void cheersTimerSetState(int64_t now, timerState_t state)
 		}
 		case STOPPED:
 		{	
-			setLedsCheers();
+			timerData->startTime = now;
+
+			for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
+				leds[i].r = 0;
+				leds[i].g = 0;
+				leds[i].b = 0;
+			}
+
+			setLeds(leds, CONFIG_NUM_LEDS);
+
 			bzrPlaySfx(&timerData->coinFX, BZR_STEREO);
 			break;
 		}
+		default:
+			break;
 	}
 }
 
 
 static void cheersTimerMainLoop(int64_t elapsedUs)
 {
-	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
-
 	int64_t now = esp_timer_get_time();
 
 	buttonEvt_t evt;
@@ -214,6 +248,7 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 				switch (timerData->timerState)
 				{
 					case STOPPED:
+					case INITIAL:
 					{
 						espNowSend(resetPacket, ARRAY_SIZE(resetPacket));
 						cheersTimerSetState(now, RUNNING);
@@ -227,6 +262,14 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 						break;
 					}
 				}
+			}
+			else if (evt.button == PB_UP)
+			{
+				timerData->ledMode = (timerData->ledMode + 1) % LED_MODE_MAX;
+			}
+			else if (evt.button == PB_DOWN)
+			{
+				timerData->ledMode = (timerData->ledMode + LED_MODE_MAX - 1) % LED_MODE_MAX;
 			}
 		}
 	}
@@ -243,16 +286,23 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 	drawWsgSimple(&timerData->aWsg, 20, controlsOffset);
 	drawWsgSimple(&timerData->bWsg, 35, controlsOffset);
 
-	if (timerData->timerState == STOPPED) {
+	if (timerData->timerState == STOPPED || timerData->timerState == INITIAL) {
 		drawText(&timerData->textFont, c444, startStr, 55, controlsOffset + wsgOffset);
 	} else {
 		drawText(&timerData->textFont, c444, cheersStr, 55, controlsOffset + wsgOffset);
 	}
 
+	drawWsg(&timerData->dpadWsg, TFT_WIDTH - 150, controlsOffset, false, false, 0);
+	drawWsg(&timerData->dpadWsg, TFT_WIDTH - 135, controlsOffset, false, true, 0);
+
+	drawText(&timerData->textFont, c444, ledModeStr, TFT_WIDTH - 115, controlsOffset + wsgOffset);
+
 	int64_t elapsed = now - timerData->startTime;
+	int64_t previousElapsed = elapsed - elapsedUs;
 
 	uint16_t elapsedMillis = (elapsed / 1000) % 1000;
 	uint8_t elapsedSecs    = (elapsed / 1000000) % 60;
+	uint8_t previousElapsedSecs = (previousElapsed / 1000000) % 60;
 	uint8_t elapsedMins    = (elapsed / (60 * 1000000)) % 60;
 	uint64_t elapsedHrs = elapsed / 3600000000;
 
@@ -273,27 +323,63 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 		textX = (TFT_WIDTH - textWidth(&timerData->numberFont, buffer)) / 2;
 		textX = drawText(&timerData->numberFont, c050, buffer, textX, textY);
 
-		for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
-			leds[i].r = (elapsedSecs % 3 == 0) ? 255 - elapsedMillis/4 : 0;
-			leds[i].g = ((elapsedSecs+1) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
-			leds[i].b = ((elapsedSecs+2) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+		switch(timerData->ledMode) {
+			case LED_MODE_FULL:
+				ledModeFull(elapsedSecs, elapsedMillis);
+				break;
+			case LED_MODE_SINGLE:
+				ledModeSingle(elapsedSecs, elapsedMillis);
+				break;
+			default:
+				break;
 		}
+	} else if (timerData->timerState == STOPPED) {
+		if (elapsedSecs % 2 == 0) {
+			if (previousElapsedSecs != elapsedSecs) {
+				setLedsOff();
+			}
 
-		setLeds(leds, CONFIG_NUM_LEDS);
-	} else {
+			textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
+			textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
+		} else {
+			if (previousElapsedSecs != elapsedSecs) {
+				setLedsCheers();
+			}
+		}
+	} else if (timerData->timerState == INITIAL) {
 		textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
 		textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
 	}
 }
 
 static void setLedsCheers() {
+	setLeds(cheersLeds, CONFIG_NUM_LEDS);
+}
+
+static void setLedsOff() {
+	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
+
+	setLeds(leds, CONFIG_NUM_LEDS);
+}
+
+static void ledModeFull(uint8_t elapsedSecs, uint16_t elapsedMillis) {
 	static led_t leds[CONFIG_NUM_LEDS] = {{0}};
 
 	for (uint8_t i = 0; i < CONFIG_NUM_LEDS; i++) {
-		leds[i].r = 255;
-		leds[i].g = 255;
-		leds[i].b = 0;
+		leds[i].r = (elapsedSecs % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+		leds[i].g = ((elapsedSecs+1) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+		leds[i].b = ((elapsedSecs+2) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
 	}
+
+	setLeds(leds, CONFIG_NUM_LEDS);
+}
+
+static void ledModeSingle(uint8_t elapsedSecs, uint16_t elapsedMillis) {
+	led_t leds[CONFIG_NUM_LEDS] = {{0}};
+
+	leds[elapsedSecs % CONFIG_NUM_LEDS].r = (elapsedSecs % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+	leds[elapsedSecs % CONFIG_NUM_LEDS].g = ((elapsedSecs+1) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
+	leds[elapsedSecs % CONFIG_NUM_LEDS].b = ((elapsedSecs+2) % 3 == 0) ? 255 - elapsedMillis/4 : 0;
 
 	setLeds(leds, CONFIG_NUM_LEDS);
 }
