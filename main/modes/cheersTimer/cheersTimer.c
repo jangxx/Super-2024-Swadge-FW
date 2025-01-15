@@ -301,6 +301,7 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 	int64_t previousElapsed = elapsed - elapsedUs;
 
 	uint16_t elapsedMillis = (elapsed / 1000) % 1000;
+	uint16_t previousElapsedMillis = (previousElapsed / 1000) % 1000;
 	uint8_t elapsedSecs    = (elapsed / 1000000) % 60;
 	uint8_t previousElapsedSecs = (previousElapsed / 1000000) % 60;
 	uint8_t elapsedMins    = (elapsed / (60 * 1000000)) % 60;
@@ -334,15 +335,15 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 				break;
 		}
 	} else if (timerData->timerState == STOPPED) {
-		if (elapsedSecs % 2 == 0) {
-			if (previousElapsedSecs != elapsedSecs) {
+		if (elapsedMillis < 500) {
+			if (previousElapsedMillis >= 500) {
 				setLedsOff();
 			}
 
 			textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
 			textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
 		} else {
-			if (previousElapsedSecs != elapsedSecs) {
+			if (previousElapsedSecs < 500) {
 				setLedsCheers();
 			}
 		}
