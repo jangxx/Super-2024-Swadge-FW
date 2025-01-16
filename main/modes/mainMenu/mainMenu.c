@@ -27,6 +27,7 @@
 #include "tunernome.h"
 #include "mode_credits.h"
 #include "cheersTimer.h"
+// #include "fmTuner.h"
 
 #include "settingsManager.h"
 
@@ -164,6 +165,7 @@ static void mainMenuEnterMode(void)
     addSingleItemToMenu(mainMenu->menu, jukeboxMode.modeName);
     addSingleItemToMenu(mainMenu->menu, slideWhistleMode.modeName);
     addSingleItemToMenu(mainMenu->menu, tunernomeMode.modeName);
+    // addSingleItemToMenu(mainMenu->menu, fmTunerMode.modeName);
     mainMenu->menu = endSubMenu(mainMenu->menu);
 
     mainMenu->menu = startSubMenu(mainMenu->menu, "Utilities");
@@ -416,6 +418,10 @@ static void mainMenuCb(const char* label, bool selected, uint32_t settingVal)
         {
             switchToSwadgeMode(&cheersTimerMode);
         }
+        // else if (label == fmTunerMode.modeName)
+        // {
+        //     switchToSwadgeMode(&fmTunerMode);
+        // }
     }
     else
     {

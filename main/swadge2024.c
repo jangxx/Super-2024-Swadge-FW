@@ -489,6 +489,14 @@ static void initOptionalPeripherals(void)
         accelIntegrate();
     }
 
+    // Init I2C if requested by the mode
+    if (cSwadgeMode->usesI2C)
+    {
+        initI2CDriver(GPIO_NUM_3,  // SDA
+                      GPIO_NUM_41, // SCL
+                      GPIO_PULLUP_ENABLE);
+    }
+
     // Init the temperature sensor
     if (cSwadgeMode->usesThermometer)
     {

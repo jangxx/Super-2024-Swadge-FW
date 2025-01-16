@@ -343,7 +343,7 @@ static void cheersTimerMainLoop(int64_t elapsedUs)
 			textX = (TFT_WIDTH - textWidth(&timerData->numberFont, cheersStr)) / 2;
 			textX = drawText(&timerData->numberFont, c050, cheersStr, textX, textY);
 		} else {
-			if (previousElapsedSecs < 500) {
+			if (previousElapsedMillis < 500) {
 				setLedsCheers();
 			}
 		}

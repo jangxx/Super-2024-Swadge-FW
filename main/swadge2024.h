@@ -177,6 +177,7 @@
 #include "hdw-temperature.h"
 #include "hdw-tft.h"
 #include "hdw-usb.h"
+#include "hdw-i2c.h"
 
 // Drawing interfaces
 #include "palette.h"
@@ -241,6 +242,7 @@ typedef struct
      * this is true, then the swadge will be initialized.
      */
     bool usesAccelerometer;
+    bool usesI2C;
 
     /**
      * @brief If this is false, the thermometer will not be initialized and readTemperatureSensor() will not work.
