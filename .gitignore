@@ -81,3 +81,5 @@ perf.data
 *.stackdump
 coverage/
 coverage.info
+
+swadge2024.zip
