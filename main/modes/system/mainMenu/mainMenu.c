@@ -16,6 +16,7 @@
 #include "jukebox.h"
 #include "mainMenu.h"
 #include "modeTimer.h"
+#include "cheersTimer.h"
 #include "mode_credits.h"
 #include "mode_bigbug.h"
 #include "mode_swadgeHero.h"
@@ -40,7 +41,6 @@ typedef struct
 {
     menu_t* menu;
     menuManiaRenderer_t* renderer;
-    font_t font_righteous;
     font_t font_rodin;
     midiFile_t fanfare;
 #ifdef SW_VOL_CONTROL
@@ -157,7 +157,6 @@ static void mainMenuEnterMode(void)
 
     // Load a font
     loadFont("rodin_eb.font", &mainMenu->font_rodin, false);
-    loadFont("righteous_150.font", &mainMenu->font_righteous, false);
 
     // Load a song for when the volume changes
 #ifdef SW_VOL_CONTROL
@@ -195,6 +194,7 @@ static void mainMenuEnterMode(void)
     addSingleItemToMenu(mainMenu->menu, gamepadMode.modeName);
     addSingleItemToMenu(mainMenu->menu, danceMode.modeName);
     addSingleItemToMenu(mainMenu->menu, timerMode.modeName);
+    addSingleItemToMenu(mainMenu->menu, cheersTimerMode.modeName);
     addSingleItemToMenu(mainMenu->menu, introMode.modeName);
     mainMenu->menu = endSubMenu(mainMenu->menu);
 
@@ -250,7 +250,6 @@ static void mainMenuExitMode(void)
 
     // Free the font
     freeFont(&mainMenu->font_rodin);
-    freeFont(&mainMenu->font_righteous);
 
     // Free the song
 #ifdef SW_VOL_CONTROL
@@ -438,6 +437,10 @@ static void mainMenuCb(const char* label, bool selected, uint32_t settingVal)
         else if (label == timerMode.modeName)
         {
             switchToSwadgeMode(&timerMode);
+        }
+        else if (label == cheersTimerMode.modeName)
+        {
+            switchToSwadgeMode(&cheersTimerMode);
         }
         else if (label == touchTestMode.modeName)
         {
